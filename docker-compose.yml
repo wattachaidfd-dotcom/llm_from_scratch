@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  # ── 1. API Inference Server ──────────────────────────────────
+  api:
+    build: .
+    container_name: llm_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./runs:/app/runs          # mount checkpoints
+      - ./part_3:/app/part_3
+      - ./part_4:/app/part_4
+      - ./part_6:/app/part_6
+    environment:
+      - PYTHONPATH=/app:/app/part_3:/app/part_4:/app/part_6
+      - CHECKPOINT_DIR=/app/runs
+    command: uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  # ── 2. TensorBoard ───────────────────────────────────────────
+  tensorboard:
+    image: tensorflow/tensorflow:latest
+    container_name: llm_tensorboard
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./runs:/logs
+    command: tensorboard --logdir=/logs --host=0.0.0.0 --port=6006
+    restart: unless-stopped
+
+  # ── 3. Training (run once; remove when done) ─────────────────
+  trainer:
+    build: .
+    container_name: llm_trainer
+    volumes:
+      - ./runs:/app/runs
+      - ./part_2:/app/part_2
+      - ./part_3:/app/part_3
+      - ./part_4:/app/part_4
+    environment:
+      - PYTHONPATH=/app:/app/part_3:/app/part_4
+    working_dir: /app/part_4
+    command: >
+      python train.py
+        --data ../part_2/tiny.txt
+        --out /app/runs/part4
+        --bpe
+        --vocab_size 8000
+        --epochs 3
+        --steps 1000
+        --batch_size 32
+        --block_size 256
+        --n_layer 4
+        --n_head 4
+        --n_embd 256
+        --mixed_precision
+        --log tensorboard
+    profiles:
+      - train   # only starts with: docker compose --profile train up trainer
+    restart: "no"
